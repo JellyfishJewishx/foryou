@@ -1,0 +1,442 @@
+----------------------------------------------------------------
+-- WhipperXイ (Delta Mobile - Auto Attack)
+----------------------------------------------------------------
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local VIM = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+local pg = LocalPlayer:WaitForChild("PlayerGui")
+
+getgenv().auto = true
+getgenv().autoClick = false
+
+----------------------------------------------------------------
+-- ฟังก์ชันช่วย
+----------------------------------------------------------------
+local function getRoot()
+    local c = LocalPlayer.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function tp(cf)
+    local r = getRoot()
+    if r then r.CFrame = cf end
+end
+
+----------------------------------------------------------------
+-- ตัวโจมตีอัตโนมัติ (กดปุ่มบนจอ)
+----------------------------------------------------------------
+local attackBtn
+local attackFound = false
+
+local function findAttackButton()
+    for _, v in ipairs(pg:GetDescendants()) do
+        if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
+            local t = (v:IsA("TextButton") and v.Text or "") .. " " .. v.Name
+            local lt = t:lower()
+            if t:find("หมัด") or lt:find("m1") or lt:find("punch") or lt:find("attack") then
+                -- ข้ามปุ่มของ UI ตัวเอง
+                if not v:FindFirstAncestor("WhipperX_UI") then
+                    return v
+                end
+            end
+        end
+    end
+end
+
+local function doClick()
+    pcall(function()
+        -- 1) ถ้าถืออาวุธ ให้สั่งใช้ด้วย
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if tool then tool:Activate() end
+
+        -- 2) หาปุ่มโจมตีบนจอ
+        if not attackBtn or not attackBtn.Parent or not attackBtn.Visible then
+            attackBtn = findAttackButton()
+        end
+        attackFound = attackBtn ~= nil
+        if not attackBtn then return end
+
+        -- 3) ลองสั่ง event ของปุ่มตรง ๆ ก่อน
+        local fired = false
+        if getconnections then
+            for _, sig in ipairs({ "MouseButton1Down", "MouseButton1Click", "Activated", "TouchTap" }) do
+                pcall(function()
+                    for _, c in ipairs(getconnections(attackBtn[sig])) do
+                        c:Fire()
+                        fired = true
+                    end
+                end)
+            end
+        end
+
+        -- 4) ไม่ได้ผล ให้จำลองการแตะที่ตำแหน่งปุ่ม
+        if not fired then
+            local inset = GuiService:GetGuiInset()
+            local p = attackBtn.AbsolutePosition + attackBtn.AbsoluteSize / 2 + inset
+            VIM:SendMouseButtonEvent(p.X, p.Y, 0, true, game, 1)
+            task.wait(0.03)
+            VIM:SendMouseButtonEvent(p.X, p.Y, 0, false, game, 1)
+        end
+    end)
+end
+
+local clickRunning = false
+local function startClick()
+    if clickRunning then return end
+    clickRunning = true
+    task.spawn(function()
+        while getgenv().autoClick do
+            doClick()
+            task.wait(0.15)
+        end
+        clickRunning = false
+    end)
+end
+
+----------------------------------------------------------------
+-- UI (ชมพูโปร่งใส รองรับนิ้วลาก)
+----------------------------------------------------------------
+pcall(function()
+    local old = pg:FindFirstChild("WhipperX_UI")
+    if old then old:Destroy() end
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "WhipperX_UI"
+gui.ResetOnSpawn = false
+gui.Parent = pg
+
+local PINK = Color3.fromRGB(255, 105, 180)
+local DEEP = Color3.fromRGB(255, 20, 147)
+local WHITE = Color3.fromRGB(255, 240, 248)
+local TEXT_STROKE = Color3.fromRGB(120, 0, 60)
+
+local function stroke(obj, thick, color)
+    local s = Instance.new("UIStroke")
+    s.Color = color or WHITE
+    s.Thickness = thick or 2
+    s.Parent = obj
+end
+
+local function styleText(obj)
+    obj.TextStrokeTransparency = 0.3
+    obj.TextStrokeColor3 = TEXT_STROKE
+end
+
+local W, H = 250, 200
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, W, 0, H)
+main.Position = UDim2.new(0, 10, 0.3, 0)
+main.BackgroundColor3 = PINK
+main.BackgroundTransparency = 0.65
+main.BorderSizePixel = 0
+main.Active = true
+main.Parent = gui
+stroke(main, 2)
+
+local dragging, dragStart, startPos
+main.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        dragging, dragStart, startPos = true, i.Position, main.Position
+        i.Changed:Connect(function()
+            if i.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+UIS.InputChanged:Connect(function(i)
+    if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+        local d = i.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+    end
+end)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -40, 0, 26)
+title.Position = UDim2.new(0, 10, 0, 4)
+title.BackgroundTransparency = 1
+title.Text = "WhipperXイ"
+title.TextColor3 = WHITE
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = main
+styleText(title)
+
+local mini = Instance.new("TextButton")
+mini.Size = UDim2.new(0, 24, 0, 24)
+mini.Position = UDim2.new(1, -30, 0, 5)
+mini.BackgroundColor3 = DEEP
+mini.BackgroundTransparency = 0.4
+mini.Text = "-"
+mini.TextColor3 = WHITE
+mini.Font = Enum.Font.Code
+mini.TextSize = 18
+mini.Parent = main
+stroke(mini, 1)
+styleText(mini)
+
+local statusBox = Instance.new("Frame")
+statusBox.Size = UDim2.new(1, -20, 0, 60)
+statusBox.Position = UDim2.new(0, 10, 0, 34)
+statusBox.BackgroundColor3 = DEEP
+statusBox.BackgroundTransparency = 0.5
+statusBox.BorderSizePixel = 0
+statusBox.Parent = main
+stroke(statusBox, 1)
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -10, 1, -10)
+status.Position = UDim2.new(0, 5, 0, 5)
+status.BackgroundTransparency = 1
+status.Text = "Status: Idle"
+status.TextColor3 = WHITE
+status.Font = Enum.Font.Code
+status.TextSize = 13
+status.TextWrapped = true
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.TextYAlignment = Enum.TextYAlignment.Top
+status.Parent = statusBox
+styleText(status)
+
+local barBg = Instance.new("Frame")
+barBg.Size = UDim2.new(1, -20, 0, 12)
+barBg.Position = UDim2.new(0, 10, 0, 102)
+barBg.BackgroundColor3 = DEEP
+barBg.BackgroundTransparency = 0.5
+barBg.BorderSizePixel = 0
+barBg.Parent = main
+stroke(barBg, 1)
+
+local bar = Instance.new("Frame")
+bar.Size = UDim2.new(0, 0, 1, 0)
+bar.BackgroundColor3 = WHITE
+bar.BorderSizePixel = 0
+bar.Parent = barBg
+
+local function btn(text, x, bg, fg, y, h)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0.5, -15, 0, h or 30)
+    b.Position = UDim2.new(0, x, 0, y)
+    b.BackgroundColor3 = bg
+    b.BackgroundTransparency = 0.4
+    b.Text = text
+    b.TextColor3 = fg
+    b.Font = Enum.Font.Code
+    b.TextSize = 13
+    b.Parent = main
+    stroke(b, 1)
+    return b
+end
+
+local btnAuto = btn("Auto: ON", 10, PINK, WHITE, 124)
+local btnClick = btn("Attack: OFF", 130, PINK, WHITE, 124)
+styleText(btnAuto)
+styleText(btnClick)
+local btnStop = btn("Stop Script", 10, WHITE, Color3.fromRGB(200, 0, 90), 160)
+btnStop.Size = UDim2.new(1, -20, 0, 30)
+
+local minimized = false
+mini.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    for _, c in ipairs(main:GetChildren()) do
+        if c ~= title and c ~= mini and c:IsA("GuiObject") then
+            c.Visible = not minimized
+        end
+    end
+    main.Size = minimized and UDim2.new(0, W, 0, 34) or UDim2.new(0, W, 0, H)
+end)
+
+btnAuto.MouseButton1Click:Connect(function()
+    getgenv().auto = not getgenv().auto
+    btnAuto.Text = "Auto: " .. (getgenv().auto and "ON" or "OFF")
+end)
+
+btnClick.MouseButton1Click:Connect(function()
+    getgenv().autoClick = not getgenv().autoClick
+    btnClick.Text = "Attack: " .. (getgenv().autoClick and "ON" or "OFF")
+    if getgenv().autoClick then startClick() end
+end)
+
+btnStop.MouseButton1Click:Connect(function()
+    getgenv().auto = false
+    getgenv().autoClick = false
+    gui:Destroy()
+end)
+
+local currentStep = "Idle"
+local function SetStatus(text, percent)
+    currentStep = text
+    status.Text = "Status: " .. text
+    if percent then
+        bar.Size = UDim2.new(math.clamp(percent, 0, 1), 0, 1, 0)
+    end
+    print("[WhipperX] " .. text)
+end
+
+-- แสดงว่าเจอปุ่มโจมตีหรือยัง
+task.spawn(function()
+    while gui.Parent do
+        if getgenv().autoClick then
+            status.Text = "Status: " .. currentStep .. "\nAttack btn: " .. (attackFound and "found" or "NOT found")
+        end
+        task.wait(0.5)
+    end
+end)
+
+----------------------------------------------------------------
+-- ฟาร์ม
+----------------------------------------------------------------
+local Collection = {}
+local graveyard, slots
+
+-- 1) แก้ปริศนา
+function Collection:Getevent()
+    local order = {}
+    for i = 1, 5 do
+        local slot = slots:FindFirstChild(tostring(i))
+        local shape = slot and slot:GetChildren()[1]
+        if shape then
+            order[i] = shape.Name
+        end
+    end
+
+    print("Order:", table.concat(order, " -> "))
+
+    for i, name in ipairs(order) do
+        if not getgenv().auto then return false end
+        local target = graveyard:FindFirstChild(name)
+
+        if target and getRoot() then
+            tp(target.CFrame)
+            task.wait(0.4)
+            local prompt = target:FindFirstChild("ProximityPrompt")
+            if prompt then
+                pcall(fireproximityprompt, prompt)
+            end
+            task.wait(0.6)
+        else
+            warn("Not found: " .. tostring(name) .. " (slot " .. i .. ")")
+        end
+    end
+    return true
+end
+
+-- 2) ฆ่า Necromancer จนหมด
+function Collection:autoclerraid()
+    while getgenv().auto do
+        task.wait()
+        local found = false
+
+        for _, Mon in pairs(workspace:GetChildren()) do
+            if Mon.Name == "Necromancer"
+                and Mon:FindFirstChild("Humanoid")
+                and Mon:FindFirstChild("HumanoidRootPart")
+                and Mon.Humanoid.Health > 0 then
+                found = true
+                pcall(function()
+                    repeat
+                        task.wait()
+                        tp(Mon.HumanoidRootPart.CFrame * CFrame.new(0, 0, 8))
+                    until Mon.Humanoid.Health <= 0 or not Mon.Parent or not getgenv().auto
+                end)
+            end
+        end
+
+        if not found then
+            return true
+        end
+    end
+    return false
+end
+
+-- 3) วาปเข้า Portal
+function Collection:teleportHaun()
+    local ok = pcall(function()
+        local portal = graveyard.Portal
+        tp(portal.CFrame)
+        task.wait(0.6)
+        fireproximityprompt(portal.Attachment.ProximityPrompt)
+    end)
+    return ok
+end
+
+-- 4) ฟาร์มบอส (รอให้เกิดก่อน)
+function Collection:farmBoss(name, waitTime)
+    local boss
+    local t = 0
+
+    while getgenv().auto and t < (waitTime or 30) do
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v.Name == name
+                and v:FindFirstChild("Humanoid")
+                and v:FindFirstChild("HumanoidRootPart")
+                and v.Humanoid.Health > 0 then
+                boss = v
+                break
+            end
+        end
+        if boss then break end
+        task.wait(0.5)
+        t = t + 0.5
+    end
+
+    if not boss then
+        warn("Boss not found: " .. name)
+        return false
+    end
+
+    print("Found boss:", boss:GetFullName())
+    pcall(function()
+        repeat
+            task.wait()
+            tp(boss.HumanoidRootPart.CFrame * CFrame.new(0, 0, 8))
+        until boss.Humanoid.Health <= 0 or not boss.Parent or not getgenv().auto
+    end)
+    return true
+end
+
+----------------------------------------------------------------
+-- เริ่มทำงาน
+----------------------------------------------------------------
+task.spawn(function()
+    SetStatus("Looking for dungeon...", 0.05)
+    graveyard = workspace:WaitForChild("Reaper's Graveyard", 15)
+    if not graveyard then
+        SetStatus("Reaper's Graveyard not found. Enter the dungeon first.", 0)
+        return
+    end
+    slots = graveyard:WaitForChild("PuzzleSlots", 10)
+    if not slots then
+        SetStatus("PuzzleSlots not found", 0)
+        return
+    end
+
+    -- เปิดโจมตีอัตโนมัติ
+    getgenv().autoClick = true
+    btnClick.Text = "Attack: ON"
+    startClick()
+
+    SetStatus("Solving puzzle", 0.1)
+    if not Collection:Getevent() then return end
+
+    SetStatus("Farming Necromancer", 0.4)
+    if not Collection:autoclerraid() then return end
+
+    SetStatus("Entering portal", 0.6)
+    if Collection:teleportHaun() then
+        task.wait(2)
+
+        SetStatus("Boss 1: Haunted Reaper", 0.8)
+        Collection:farmBoss("Haunted Reaper", 30)
+
+        SetStatus("Boss 2: Walter Wraith", 0.95)
+        Collection:farmBoss("Walter Wraith", 30)
+
+        SetStatus("Done", 1)
+    else
+        SetStatus("Portal teleport failed", 0.6)
+    end
+end)
